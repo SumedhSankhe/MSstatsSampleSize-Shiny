@@ -31,14 +31,15 @@ function(session, input, output) {
   data <- eventReactive(input$import_data, {
     withProgress({
       data <- show_faults(
-        expr = explore_data(format = input$data_format,
+        expr = format_data(format = input$data_format,
                             count = input$standard_count,
                             annot = input$standard_annot,
                             session = session),
         session = session
       )
+      
       # Create a global variable for dynamic ui element
-      B_GROUP <<- data$annot_data[,unique(Condition)] 
+      B_GROUP <<- data$b_group
       # update the slider input with the maximum number of proteins found in the dataset
       updateSliderInput(session = session, inputId = "prot_num",
                         min = 1, max = data$n_prot, value = data$n_prot)
@@ -57,29 +58,43 @@ function(session, input, output) {
   # Condition Summary Table
   output$cond_sum_table <- DT::renderDataTable({
     validate(need(!is.null(data()), "Data Formatting in Progress"))
-    validate(need(!is.null(data()$cond_sum_table), "Data Not Imported"))
-    DT::datatable(data()$cond_sum_table,
+    validate(need(!is.null(data()$data_summary), "Data Not Imported"))
+    DT::datatable(data()$data_summary,
                   options = list(dom = 't', autoWidth = TRUE,
                                  # columnDefs = list(list(width = '200px',
                                  #                        targets = "_all")),
                                  selection = 'none'))
   })
   # Data Summary Table
-  output$sum_table <- DT::renderDataTable(
-    DT::datatable(data()$sum_table,
+  output$sum_table <- DT::renderDataTable({
+    sum_table <- data.frame(Parameter =  c("Number of Proteins", "Number of Groups"),
+                            Values = c(data()$n_prot,
+                                       data()$n_group))
+    DT::datatable(sum_table,
                   options = list(dom = 't', autoWidth = TRUE,
                                  # columnDefs = list(list(width = '200px',
                                  #                        targets = "_all")),
-                  selection = 'none'))
-  )
+                                 selection = 'none'))
+  })
   # Boxplot for Proteins
-  output$global_boxplot <- plotly::renderPlotly(
-    data()$boxplot
-  )
+  output$global_boxplot <- plotly::renderPlotly({
+    validate(need(!is.null(data()), "Data Not Found"))
+    plotly::plot_ly(data = data()$long_data[!is.na(abundance)],
+                    y = ~log(abundance), x = ~bioreplicate, color = ~condition,
+                    type = "box") %>%
+      plotly::layout(xaxis = list(title="Biological Replicate"), 
+                     yaxis = list(title="Log Protein abundance"),
+                     legend = list(orientation = "h", #position and of the legend
+                                   xanchor = "center",
+                                   x = 0.5, y = 1.1)) %>%
+      plotly::config(displayModeBar = F) 
+  })
+  
   # Mean and Standard Deviation Plot
-  output$mean_sd_plot <- renderPlot(
-    data()$meanSDplot
-  )
+  output$mean_sd_plot <- renderPlot({
+    validate(need(!is.null(data()), "Data Not Found"))
+    data()$mean_sd_plot
+  })
   
   observeEvent(input$set_seed,{
     if(input$set_seed == T){
@@ -193,11 +208,11 @@ function(session, input, output) {
                                orig_group = input$b_group)
         exp_fc <- rbind(baseline, fc_values)
       }
+      browser()
       data <- show_faults({
-        simulate_grid(data = data()$wide_data,
-                      annot = data()$annot_data,
-                      num_simulation = input$n_sim,
-                      exp_fc = exp_fc,
+        simulate_grid(data = data()$long_data, stats = data()$var_summary,
+                      n_group = data()$n_group, n_prots = data()$n_prot,
+                      num_simulation = input$n_sim,exp_fc = exp_fc,
                       list_diff_proteins = input$diff_prot,
                       sel_simulated_proteins = tolower(input$sel_sim_prot),
                       prot_proportion = input$prot_prop,
@@ -217,7 +232,7 @@ function(session, input, output) {
   
   #### Toggle Switch for previous/next/download buttons, updates select input ####
   observeEvent(input$simulate, {
-    validate(need(nrow(data()$wide_data) != 0, "Import Data using the Import Data Menu"))
+    validate(need(nrow(data()$long_data) != 0, "Import Data using the Import Data Menu"))
     sc <- sprintf("Simulation %s", seq(1, input$n_sim))
     sim_choices <<- do.call('c',lapply(sc, function(x){
       sprintf("%s Sample Size %s", x,
@@ -255,9 +270,7 @@ function(session, input, output) {
         pdf(file = file)
         for(i in seq_along(sim_choices)){
           status(sprintf("Plotting %s plot", i), value = i/length(sim_choices), session = session)
-          vals <- unlist(stringr::str_extract_all(sim_choices[i],'\\d+'))
-          sim <- sprintf("simulation%s",vals[1])
-          print(make_pca_plots(simulations()[[vals[2]]], which = sim)+
+          print(make_pca_plots(simulations(), choice = sim_choices[i])+
                   labs(title = sim_choices[i]))
         }
         dev.off()
@@ -270,10 +283,8 @@ function(session, input, output) {
   output$pca_plot <- renderPlot(
     if(!is.null(input$simulations)){
       validate(need(nchar(input$simulations) != 0, 'No Simulations Run yet'))
-      vals <- unlist(stringr::str_extract_all(input$simulations,'\\d+'))
-      sim <- sprintf("simulation%s",vals[1])
       show_faults({
-        make_pca_plots(simulations()[[vals[2]]], which = sim)},
+        make_pca_plots(simulations(), choice = input$simulations)},
         session = session)
     }else{
       shiny::showNotification("No Simulations Found", duration = NULL)

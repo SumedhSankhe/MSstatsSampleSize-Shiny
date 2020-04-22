@@ -98,6 +98,10 @@ theme_MSstats <- function(x.axis.size = 10, y.axis.size = 10, legend.size = 7){
 
 
 estimate_variance <- function(abundance, annotation){
+  
+  if(!'data.table' %in% (.packages())){
+    library('data.table')
+  }
   #check if the data provided is a data.table
   #set all names to lower cases
   if(!'data.table' %in% class(abundance)){
@@ -221,6 +225,25 @@ format_data <- function(format, count = NULL, annot = NULL, session = NULL){
     #No column names expected for the protein columns
     #TODO make this name agnostic 
     setnames(wide, 'V1', 'protein')
+    uniq_prots <- unique(wide[, protein])
+    prots_combinations <- uniq_prots[grep(',|;',uniq_prots)]
+    
+    if(length(prots_combinations) > 0){
+      single_prots <- uniq_prots[-grep(',|;', uniq_prots)]
+      v <- do.call('c', lapply(prots_combinations, function(x){
+        comb <- unlist(strsplit(x,',|;'))
+        val <- any(comb %in% single_prots)
+        if(!val){
+          return(x)
+        }
+      }))
+    single_prots <- c(single_prots,v)
+    message(Sys.time()," Old Proteins", length(uniq_prots),
+            ", New Proteins", length(single_prots))
+    
+    wide <- wide[protein %in% single_prots]
+    }
+    
     name <- count$name
     status(detail = 'Importing Annotations file', value = 0.5,
            session = session)
@@ -356,12 +379,13 @@ pca_plot <- function(data, exp_var, dot_size = 3){
 #' MSstatsSampleSize package which enables simulating datasets for running experiments
 #' @param data 
 simulate_grid <- function(data = NULL, stats = NULL, n_group, n_prots, num_simulation,
-                          exp_fc, list_diff_proteins = NULL, sel_simulated_proteins, 
-                          prot_proportion, prot_number, samples_per_group, sim_valid,
-                          valid_samples_per_grp, seed, session = NULL){
+                          exp_fc, list_diff_proteins = NULL, sel_simulated_proteins ='proportion', 
+                          prot_proportion = 1, prot_number = 1000,
+                          samples_per_group, sim_valid = F,
+                          valid_samples_per_grp = 50, seed = NULL, session = NULL){
   
   status(detail = "Setting Up Data Simulation Runs", value = 0.1, session = session)
-  if(seed != -1)
+  if(!is.null(seed))
     set.seed(seed)
   
   if(exp_fc != 'data'){
@@ -382,6 +406,7 @@ simulate_grid <- function(data = NULL, stats = NULL, n_group, n_prots, num_simul
   
   status(detail = "Starting Simulation", value = 0.3, session = session)
   sim <- list()
+  
   for(i in samp){
     status(detail = sprintf("Running Simulation for sample %s of %s", which(i == samp),
                             length(samp)),
@@ -396,8 +421,10 @@ simulate_grid <- function(data = NULL, stats = NULL, n_group, n_prots, num_simul
                                         max_prots = prot_number, 
                                         list_diff_prots = diff_prots,
                                         sim_validation = as.logical(sim_valid),
+                                        create_val = create_val,
                                         n_sample_val = valid_samples_per_grp)
   }
+  
   status(detail = "Simulation Complete", value = 0.9, session = session)
   return(sim)
 }
@@ -425,7 +452,7 @@ sample_simulation <- function(c_stat, n_sample, n_group){
 simulate_dataset <- function(data, stats, n_group, group, n_prots, n_sim, n_sample,
                              exp_fc = 'data', sel_sim_proteins = 'proportion',
                              prot_prop = 1, max_prots = 1000, list_diff_prots = NULL, 
-                             sim_validation = FALSE, n_sample_val){
+                             sim_validation = FALSE, create_val = FALSE, n_sample_val){
   
   #identify the number and proportion of the protiens to be simulated
   prot_num <- ifelse(sel_sim_proteins == "proportion", round(n_prots * prot_prop),
@@ -452,7 +479,7 @@ simulate_dataset <- function(data, stats, n_group, group, n_prots, n_sim, n_samp
   }
   
   #simulated validation data if required
-  if(sim_validation){
+  if(sim_validation  && create_val){
     message(Sys.time()," Validation Set Simulated")
     validation_data <- sample_simulation(c_stat = stats, n_sample = n_sample_val,
                                          n_group = n_group)
@@ -905,3 +932,7 @@ sampleSimulation <- function (m, mu, sigma) {
   group <- group[index]
   return(list(X = sim_matrix, Y = as.factor(group)))
 }
+
+
+
+

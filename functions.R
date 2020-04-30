@@ -97,6 +97,25 @@ theme_MSstats <- function(x.axis.size = 10, y.axis.size = 10, legend.size = 7){
 
 
 
+format_summary_table <- function(data = NULL){
+  #create crosstable for the conditions vs bioreplicates
+  biorep <- unique(data[,.(bioreplicate, condition)])
+  biorep <- xtabs(~condition, data = biorep)
+  
+  #create crosstable for the conditions vs runs if runs data exists
+  if('run' %in% names(data)){
+    msruns <- unique(data[,.(run, condition)])
+    msruns <- xtabs(~condition, data = msruns)
+  }else{
+    msruns <- rep(0, length(names(biorep)))
+    names(msruns) <- names(biorep) #make runs data 0 if not found
+  }
+  #format it correctly
+  summary <- rbind(biorep, msruns)
+  rownames(summary) <- c("# of Biological Replicates", "# of MS runs")
+  return(summary[,which(colSums(summary, na.rm = T) > 0)])
+}
+
 estimate_variance <- function(abundance, annotation){
   
   if(!'data.table' %in% (.packages())){
@@ -168,25 +187,6 @@ group_summary <- function(df, group){
              'sigma_' = t(var), 'sampleMean' = df[,mean(abun, na.rm = T)])
 }
 
-format_summary_table <- function(data = NULL){
-  #create crosstable for the conditions vs bioreplicates
-  biorep <- unique(data[,.(bioreplicate, condition)])
-  biorep <- xtabs(~condition, data = biorep)
-  
-  #create crosstable for the conditions vs runs if runs data exists
-  if('run' %in% names(data)){
-    msruns <- unique(data[,.(run, condition)])
-    msruns <- xtabs(~condition, data = msruns)
-  }else{
-    msruns <- rep(0, length(names(biorep)))
-    names(msruns) <- names(biorep) #make runs data 0 if not found
-  }
-  #format it correctly
-  summary <- rbind(biorep, msruns)
-  rownames(summary) <- c("# of Biological Replicates", "# of MS runs")
-  return(summary[,which(colSums(summary, na.rm = T) > 0)])
-}
-
 meanSDplot <- function (data, smoother_size = 1, xlimUp = 30, ylimUp = 3){
   #plot
   p <- ggplot(data = data, aes(x = mean, y = sigma))+
@@ -216,7 +216,7 @@ meanSDplot <- function (data, smoother_size = 1, xlimUp = 30, ylimUp = 3){
 #' @param session A shiny session variable to make the notifications interactive
 #' @return A named list of the data an other objects as required
 format_data <- function(format, count = NULL, annot = NULL, session = NULL){
-  shiny::validate(shiny::need(format %in% FORMATS, 'Undefined Format'))
+  #shiny::validate(shiny::need(format %in% FORMATS, 'Undefined Format'))
   if(format == 'standard'){
     status(detail = 'Importing Protein Abundance file', value = 0.4,
            session = session)
@@ -237,11 +237,11 @@ format_data <- function(format, count = NULL, annot = NULL, session = NULL){
           return(x)
         }
       }))
-    single_prots <- c(single_prots,v)
-    message(Sys.time()," Old Proteins", length(uniq_prots),
-            ", New Proteins", length(single_prots))
-    
-    wide <- wide[protein %in% single_prots]
+      single_prots <- c(single_prots,v)
+      message(Sys.time()," Old Proteins", length(uniq_prots),
+              ", New Proteins", length(single_prots))
+      
+      wide <- wide[protein %in% single_prots]
     }
     
     name <- count$name
@@ -254,7 +254,7 @@ format_data <- function(format, count = NULL, annot = NULL, session = NULL){
            session = session)
     #example data from the package
     wide <- as.data.table(MSstatsSampleSize::OV_SRM_train,
-                                      keep.rownames = T)
+                          keep.rownames = T)
     #examples data from the package
     annot <- as.data.table(MSstatsSampleSize::OV_SRM_train_annotation)
     setnames(wide,'rn','protein')
@@ -291,9 +291,9 @@ format_data <- function(format, count = NULL, annot = NULL, session = NULL){
   #Get variance and mean estimations for the data
   status(detail = "Estimating Mean & Variances", value = 0.8, session = session)
   var_summary <- estimate_variance(abundance = wide, annotation = annot)
+  plot_data <- copy(var_summary)
   
   status(detail = "Formatting Mean Variance Plot Data", value = 0.9, session = session)
-  plot_data <- copy(var_summary)
   #get rid of unwanted columns
   plot_data[, sampleMean := NULL]
   #convert data to long form
@@ -342,13 +342,10 @@ make_pca_plots <- function(simulations, choice, width = 3, height = 3,
   choice[2] <- gsub(' Size ', '', choice[2]) 
   choice[1] <- gsub(' ','', choice[1])
   status(detail = 'Extracting Simulated Data', value = 0.3, session = session)
-  df <- copy(simulations[[choice[2]]]$simulated[[choice[1]]])
-  df[, idx := 1:.N, by = 'protein']
-  df <- dcast(df, idx+condition~protein, value.var = 'abundance')
-  sim_y <- df$condition
-  df[, c('idx', 'condition') := NULL]
+  val <- sprintf("Sample_%s_Simulation_%s", choice[2], gsub("Simulation",'', choice[1]))
+  df <- copy(simulations[[choice[2]]]$simulated[[val]])
   status(detail = 'Performaing PCA on the data', value = 0.7, session = session)
-  pr_comp <- do_prcomp(sim_x = df, sim_y = sim_y)
+  pr_comp <- do_prcomp(sim_x = df[,-1], sim_y = as.vector(df[,1]))
   p <- pca_plot(data = pr_comp$pc.result, exp_var = pr_comp$exp.var)
   
   return(p)
@@ -411,7 +408,7 @@ simulate_grid <- function(data = NULL, stats = NULL, n_group, n_prots, num_simul
     status(detail = sprintf("Running Simulation for sample %s of %s", which(i == samp),
                             length(samp)),
            value = which(i==samp)/length(samp), 
-           session = session)
+           session = NULL)
     
     sim[[paste(i)]] <- simulate_dataset(data = data, stats = stats, n_group = n_group,
                                         n_prots = n_prots, n_sim = num_simulation, 
@@ -421,7 +418,6 @@ simulate_grid <- function(data = NULL, stats = NULL, n_group, n_prots, num_simul
                                         max_prots = prot_number, 
                                         list_diff_prots = diff_prots,
                                         sim_validation = as.logical(sim_valid),
-                                        create_val = create_val,
                                         n_sample_val = valid_samples_per_grp)
   }
   
@@ -444,7 +440,9 @@ sample_simulation <- function(c_stat, n_sample, n_group){
   #simulate normally distributed data given the mean and standard deviation
   #for each protein and condition in the data
   sim <- c_stat[, rnorm(n_sample, mean, sigma), .(protein, condition)]
-  setnames(sim,'V1', 'abundance')
+  sim[, ID := sequence(.N), by = .(protein,condition)]
+  sim <- dcast(sim,ID+condition~protein, value.var = 'V1')
+  sim[, ':='(condition = as.factor(condition), ID = NULL)]
   return(sim)
 }
 
@@ -452,7 +450,12 @@ sample_simulation <- function(c_stat, n_sample, n_group){
 simulate_dataset <- function(data, stats, n_group, group, n_prots, n_sim, n_sample,
                              exp_fc = 'data', sel_sim_proteins = 'proportion',
                              prot_prop = 1, max_prots = 1000, list_diff_prots = NULL, 
-                             sim_validation = FALSE, create_val = FALSE, n_sample_val){
+                             sim_validation = FALSE, create_val = FALSE,
+                             n_sample_val =NULL){
+  
+  if(is.null(data) || is.null(stats)){
+    stop(Sys.time()," : No Data and Summary Statistics Provided")
+  }
   
   #identify the number and proportion of the protiens to be simulated
   prot_num <- ifelse(sel_sim_proteins == "proportion", round(n_prots * prot_prop),
@@ -461,6 +464,7 @@ simulate_dataset <- function(data, stats, n_group, group, n_prots, n_sim, n_samp
   if(!is.null(list_diff_prots)){
     stats <- stats[protein %in% list_diff_prots]
   }
+  
   stats <- stats[,.SD[order(sampleMean, decreasing = T)][1:prot_num]]
   stats <- stats[!is.na(protein)]
   stats[, sampleMean := NULL]
@@ -487,21 +491,28 @@ simulate_dataset <- function(data, stats, n_group, group, n_prots, n_sim, n_samp
     df_list <- split(data, by = 'protein')
     message(Sys.time()," Validation Set Checked for Missing Values")
     #else check if the data has any missing value to be imputed  for validation
+    dest_frame <- sprintf("Sample_%s_validation", n_sample)
     validation_data <- rbindlist(lapply(df_list, impute_random))
+    validation_data <- dcast(validation_data, bioreplicate+condition~protein,
+                             value.var = 'abundance')
+    validation_data[, bioreplicate := NULL]
+    assign(dest_frame, h2o::as.h2o(validation_data))
   }
   
   simulated <- list()
   for(i in seq_len(n_sim)){
-    message(Sys.time()," Simulating ",i," of ", n_sim)
-    simulated[[paste0("Simulation",i)]] <- sample_simulation(c_stat = stats, 
-                                                             n_sample = n_sample,
-                                                             n_group = n_group)
+    status(detail = sprintf("Simulating ",i," of ", n_sim),
+           )
+    sim_data <- sample_simulation(c_stat = stats, 
+                                  n_sample = n_sample,
+                                  n_group = n_group)
+    dest_frame_tr <- sprintf("Sample_%s_Simulation_%s", n_sample, i)
+    simulated[[dest_frame_tr]] <- h2o::as.h2o(sim_data, dest_frame_tr)
   }
   message(Sys.time()," Simulation Completed")
   
-  return(list('simulated' = simulated, 'validation' = validation_data))
+  return(list('simulated' = simulated, 'validation' = get(dest_frame)))
 }
-
 
 #### Classification #####
 
@@ -536,109 +547,113 @@ ss_classify_h2o <- function(n_samp, sim_data, classifier, stopping_metric = "AUT
                             seed = -1, nfolds = 0, fold_assignment = "AUTO", iters = 200,
                             alpha = 0, family, solver, link, min_sdev, laplace, eps,
                             session = NULL){
-  #browser()
   samp <- unlist(strsplit(n_samp,','))
-  config <- h2o_config()
-  # h2o::h2o.init(nthreads = -1, max_mem_size = config$max_mem, log_dir = config$log_dir,
-  #               log_level = config$log_level)
-  
- 
-  suppressPackageStartupMessages({
-    library(snow)
-    library(foreach)
-    library(doParallel)})
-  options(cores = detectCores())
-  cl <- makeCluster(detectCores()/2, type = 'SOCK')
-  registerDoParallel(cl)
+  max_val <- 0
+  iter <- 0
   
   modelz <- list()
-  
-  # vars <- foreach(i = samp, .combine = "c",
-  #                 .packages = c("h2o","data.table"),
-  #                 .errorhandling = "stop",
-  #                 .verbose=TRUE) %do% {
-  #                   var <- sprintf("valid_x_%s", i)
-  #                   assign(var, data.table(
-  #                     as.data.table(sim_data[[i]]$valid_X, keep.rownames = T),
-  #                     condition = sim_data[[i]]$valid_Y))
-  #                   assign(var, as.h2o(get(var)))
-  #                   return(var)
-  #                 }
-  
-  
-  
-  
-  models <- foreach(i = samp, .combine = 'append', 
-                    .packages = c("h2o","data.table")) %do% {
-                     port <- 54321 + 3*as.numeric(i)
-                     print(paste0("http://localhost:", port))
-                     h2o.init(nthreads = -1, max_mem_size = "16G", port = port,
-                              log_dir = config$log_dir, log_level = config$log_level)
-                     
-                     valid_x <- sim_data[[i]]$valid_X
-                     valid_y <- sim_data[[i]]$valid_Y
-                     valid_x <- as.data.table(valid_x, keep.rownames = T)
-                     valid_x <- data.table(valid_x, condition =  valid_y)
-                     valid <- as.h2o(valid_x)
-                     train_x_list <- sim_data[[i]]$simulation_train_Xs 
-                     train_y_list = sim_data[[i]]$simulation_train_Ys
-                     for(index in seq_along(train_x_list)){
-                       new_val <- index/length(train_x_list)
-                       
-                       train <- data.table(train_x_list[[index]],
-                                           condition = as.factor(train_y_list[[index]]))
-                       train <- as.h2o(train)
-                       y <- "condition"
-                       x <- setdiff(names(train), y)
-                       #train <- dcast(test, Condition+BioReplicate~Protein, value.var = "Abundance")
-                       if(classifier == "rf"){
-                         model <- h2o::h2o.randomForest(x = x, y = y, training_frame = train,
-                                                        validation_frame = valid,
-                                                        stopping_metric = stopping_metric, seed = seed, 
-                                                        balance_classes = FALSE, nfolds = nfolds,
-                                                        fold_assignment = fold_assignment)
-                         
-                         #l <- labs(subtitle = "Model: Random Forest (h2o package)")
-                         
-                       } else if (classifier == "nnet"){
-                         l1 = 0.5
-                         l2 = 0
-                         rate = 0.010
-                         rho = 0.99
-                         epochs = 10
-                         hidden = c(150,150)
-                         activation = "Rectifier"
-                         model <- h2o::h2o.deeplearning(x = x, y = y, training_frame = train)
-                       } else if (classifier == "svmLinear"){
-                         model <- h2o::h2o.psvm(x = x, y = y, training_frame = train, max_iterations = iters,
-                                                seed = seed, disable_training_metrics = F)
-                         #l <- labs(subtitle = "Model: SVM (h2o package)")
-                       } else if (classifier == "logreg"){
-                         model <- h2o::h2o.glm(x = x, y = y, training_frame = train, seed = seed,
-                                               family = family, lambda_search = TRUE, alpha = alpha, 
-                                               nfolds = nfolds, solver = solver, link = link)
-                         #l <- labs(subtitle = "Model: Regression (h2o package)")
-                       } else if (classifier == "naive_bayes"){
-                         model <- h2o::h2o.naiveBayes(x = x, y = y, training_frame = train, ignore_const_cols = TRUE,
-                                                      nfolds = nfolds, fold_assignment = fold_assignment,
-                                                      seed = seed, laplace = laplace, min_sdev = min_sdev,
-                                                      eps_sdev = eps, max_runtime_secs = 0)
-                         #l <- labs(subtitle = "Model: Naive Bayes (h2o package)")
-                       } else{
-                         stop("Not defined")
-                       }
-                       perf <- h2o.performance(model = model, newdata = train)
-                       name_val <- sprintf("Sample%s %s", i,  names(train_x_list)[index])
-                       var_imp <- h2o.varimp(model)
-                       modelz[[name_val]] <- list('model'= model, 'perf' = perf,
-                                                  'var_imp' = var_imp)
-                     }
-                     h2o.shutdown(prompt = F)
-                     gc()
-                     return(modelz)
-                    }
-  stopCluster(cl=cl)
-  return(list('models' = models))
+  for(i in samp){
+    
+    train_list <- sim_data[[i]]$simulated
+    
+    for(index in seq_along(train_list)){
+      if(max_val == 0){
+        max_val <- length(train_list) * length(samp)
+      }
+      iter = iter + 1/max_val
+      
+      status(detail = sprintf("Classifying Sample Size %s of %s, Simulation %s of %s",
+                              which(samp == i), length(samp), index, length(train_list)),
+             session = session, value = iter)
+      
+      
+      if(classifier == "rf"){
+        model <- h2o::h2o.randomForest(y = 1, training_frame = train_list[[index]],
+                                       stopping_metric = stopping_metric, seed = seed, 
+                                       balance_classes = FALSE, nfolds = nfolds,
+                                       fold_assignment = fold_assignment)
+        var_imp <- h2o::h2o.varimp(model)
+        sel_imp <- var_imp$variable[1:10]
+        model <- h2o::h2o.randomForest(y = 1, 
+                                       training_frame = train_list[[index]][,c('condition',
+                                                                               sel_imp)],
+                                       validation_frame = sim_data[[i]]$validation,
+                                       stopping_metric = stopping_metric, seed = seed, 
+                                       balance_classes = FALSE, nfolds = nfolds,
+                                       fold_assignment = fold_assignment)
+        
+      } else if (classifier == "nnet"){
+        l1 = 0
+        l2 = 0
+        rho = 0.99
+        epochs = 10
+        hidden = c(250,250)
+        activation = "Rectifier"
+        model <- h2o::h2o.deeplearning(y = 1, 
+                                       training_frame = train_list[[index]],
+                                       l1= l1, l2=l2,
+                                       activation = activation,
+                                       hidden = hidden,
+                                       epochs = epochs)
+        var_imp <- h2o::h2o.varimp(model)
+        sel_imp <- found_imp$variable[1:10]
+        model <- h2o::h2o.deeplearning(y = 1,
+                                       training_frame = train_list[[index]][,c('condition',
+                                                                               sel_imp)],
+                                       validation_frame = sim_data[[i]]$validation,
+                                       l1 = l1, l2 = l2,
+                                       activation = activation, hidden = hidden,
+                                       epochs = epochs)
+        
+      } else if (classifier == "svmLinear"){
+        model <- h2o::h2o.psvm(y = 1, training_frame = train_list[[index]], 
+                               max_iterations = iters,
+                               seed = seed,
+                               validation_frame = sim_data[[i]]$validation,
+                               disable_training_metrics = F)
+        var_imp <- h2o::h2o.varimp(model)
+        
+      } else if (classifier == "logreg"){
+        model <- h2o::h2o.glm(y = 1, training_frame = train_list[[index]],
+                              seed = seed, family = family, alpha = alpha, 
+                              nfolds = nfolds, solver = solver,
+                              link = link)
+        
+        var_imp <- h2o.varimp(model)
+        sel_imp <- var_imp$variable[1:10]
+        model <- h2o::h2o.glm(y = 1, 
+                              training_frame = train_list[[index]][,c('condition',
+                                                                      sel_imp)],
+                              seed = seed, family = family, alpha = alpha,
+                              nfolds = nfolds, solver = solver, link = link,
+                              validation_frame = sim_data[[i]]$validation)
+        
+      } else if (classifier == "naive_bayes"){
+        model <- h2o::h2o.naiveBayes(y = 1, training_frame = train_list[[index]],
+                                     ignore_const_cols = TRUE,
+                                     nfolds = nfolds,
+                                     fold_assignment = fold_assignment,
+                                     seed = seed, laplace = laplace,
+                                     min_sdev = min_sdev,
+                                     eps_sdev = eps, 
+                                     validation_frame = sim_data[[i]]$validation)
+        var_imp <- h2o::h2o.varimp(model)
+      } else{
+        stop("Not defined")
+      }
+      
+      pred <- predict(model, sim_data[[i]]$validation[,-1])
+      pred_vals <- as.vector(apply(pred[-1], 1, which.max))
+      pred_vals <- colnames(pred)[-1][pred_vals]
+      cm <- table(pred_vals, as.vector(sim_data[[i]]$validation[,1]))
+      
+      acc <- sum(diag(cm))/sum(cm)
+      name_val <- names(train_list)[index]
+      modelz[[name_val]] <- list('model'= model, 'accuracy' = acc,
+                                 'var_imp' = var_imp)
+    }
+  }
+  return(list('models' = modelz))
 }
 
 h2o_config <- function(){
@@ -667,28 +682,35 @@ plot_acc <- function(data, use_h2o, alg = NA){
     df <- rbindlist(lapply(names(model_data), function(x){
       z <- model_data[[x]]
       strs <- unlist(strsplit(x,' '))
-      err <- z$model@model$training_metrics@metrics$mean_per_class_error
-      acc <- mean(z$model@model$validation_metrics@metrics$thresholds_and_metric_scores$accuracy)
+      
+      cm <- z$model@model$validation_metrics@metrics$cm$table
+      cm <- cm[1:(dim(cm)[1]-1),1:(dim(cm)[2] -2)]
+      cm <- as.matrix(sapply(cm, as.numeric))
+      acc <- sum(diag(cm))/sum(cm)
+      
       data.table(sim  = as.numeric(gsub("[[:alpha:]]",'',strs[2])),
                  sample = as.factor(gsub("[[:alpha:]]",'',strs[1])),
-                 err = err,
                  mean_acc = acc)
     }))
   }else{
-    #
     shiny::validate(shiny::need(data$samp, "No Trained Models Found"))
-    df <- suppressWarnings(melt(rbindlist(data['pred_acc'])))
+    df <- rbindlist(data$pred_acc)
     names(df) <- c("sample","mean_acc")
   }
   
   df[, acc := mean(mean_acc), sample]
-  
+  setorder(df, -sample)
+  # following logic is flawed only workds if the data.table is arrange by sample
+  # size in increasing order
+  #######
   mean_PA <- df$acc
   sample_size <- df$sample
-  dydx <- diff(mean_PA)/diff(as.numeric(as.character(sample_size)))
+  dydx <- -diff(mean_PA)/-diff(as.numeric(as.character(sample_size)))
   
   if(any(dydx >= 0.0001)){
-    optimal_index <- which(dydx >= 0.0001)[length(which(dydx >= 0.0001))] + 1
+    inter_dydx <- dydx[which(dydx >= 0.0001)]
+    min_dydx <- inter_dydx[which.min(inter_dydx)]
+    optimal_index <- which(dydx == min_dydx)
     optimal_sample_size_per_group <- sample_size[optimal_index]
   } else{
     optimal_sample_size_per_group <- sample_size[1]
@@ -696,8 +718,9 @@ plot_acc <- function(data, use_h2o, alg = NA){
   
   y_lim <- c(df[,min(acc, na.rm = T)]-0.1, 1)
   df[sample == optimal_sample_size_per_group, fill_col := 'red']
+  ######
   
-  p <- ggplot(data = df, aes(x = sample))+
+  p <- ggplot(data = df, aes(x = reorder(sample)))+
     geom_boxplot(aes(y = mean_acc, group = sample, fill = fill_col), alpha = 0.5)+
     scale_fill_identity()+
     # geom_vline(xintercept = optimal_sample_size_per_group, color = 'red', size= 0.75)+
@@ -705,86 +728,86 @@ plot_acc <- function(data, use_h2o, alg = NA){
     geom_line(aes(y = acc, group = 1), size = 0.75, color = "blue")+
     labs(x = "Simulated Sample Size", y = "Predictive Accuracy",
          title = sprintf("Classifier %s", alg),
-         caption = "The highlighted box has the highest accuracy for the given sample size")+
+         subtitle = sprintf("Optimum accuracy achieved when sample size is : %s",
+                            optimal_sample_size_per_group))+
     ylim(y_lim)+
-    theme_MSstats()
-  
+    theme_MSstats()+
+    theme(plot.subtitle = element_text(face = 'italic', color = 'red'))
   
   return(p)
 }
 
-plot_var_imp <- function(data, sample = 'all', alg = '', use_h2o, prots = 10){
+plot_var_imp <- function(data, sample = 'all', sim = NA, alg = NA, use_h2o, prots = 10){
   if(use_h2o){
     if(prots == 'all'){
       prots <- nrow(data$models[[1]]$var_imp)
     }
     
-    shiny::validate(shiny::need(data$models, "No Trained Models Found"))
-    data <- data$models
-    samp <- names(data)
-    if(alg == "svmLinear"){
-      samp <- names(data$models)
+    shiny::validate(shiny::need(length(data) != 0, "No Trained Models Found"))
+    if(sample == 'all'){
+      sample <- names(data$models)
+    }else{
+      sample <- gsub('Sample','',sample)
+      sample <- sprintf("Sample_%s_Simulation_%s", sample, 1:as.numeric(sim))
     }
-    
-    if(sample != 'all'){
-      req_samp <- unique(unlist(strsplit(samp, ' ')))
-      req_samp <- req_samp[grep("Sample", req_samp)]
-      req_samp <- req_samp[grep(sample, req_samp)]
-      samp <- samp[grep(req_samp, samp)]
-    }
-    
-    df <- rbindlist(lapply(samp, function(x){
-      dt <- as.data.table(data[[x]]$var_imp)
-      setorder(dt, -scaled_importance)
+    df <- rbindlist(lapply(sample, function(x){
+      dt <- as.data.table(data$models[[x]]$var_imp)
       dt$name <- x
       dt
     }))
     
-    df[, c('sample_size', 'simulation') := tstrsplit(name, " ", fixed = T)]
-    df <- df[, lapply(.SD, mean), .SDcols = 2:4, by = c("variable", "sample_size")]
+    df[, c('noreq', 'sample_size', 'noreq2', 'simulation') := tstrsplit(name, "_", fixed = T)]
+    df[,':='(name = NULL, noreq = NULL, noreq2 = NULL)]
+    df <- split(df, by = 'sample_size')
     
+    dt <- rbindlist(lapply(df, function(x){
+      samp <- unique(x$sample_size)
+      d <- dcast(x, variable~sample_size+simulation,
+                 value.var = 'relative_importance')
+      d <- cbind(d[,1], rowSums(d[,-1], na.rm = T))
+      setorder(d,-V2)
+      d[, ':='(V2 = (V2-min(V2))/(max(V2) - min(V2)),
+               sample_size = samp)]
+      d[1:prots]
+    }))
+    setnames(dt, 'V2', 'relative_importance')
   }else{
     if(sample == 'all'){
       sample <- as.character(data$samp)
     }else{
-      sample <- gsub("Sample","", sample)
+      sample <- gsub('Sample','',sample)
     }
     
     df <- rbindlist(lapply(sample, function(x){
-      d <- suppressWarnings(melt(as.data.table(
-        data$f_imp[[x]], keep.rownames = T)))
-      d <- d[, lapply(.SD, mean), .SDcols = 3, by = c("rn")]
+      d <- data$f_imp[[x]]
       d[, sample_size := paste("SampleSize",x)]
-      setnames(d, c('rn', 'value'), c('variable', 'relative_importance'))
+      setnames(d, c('protein.rn', 'importance'),
+               c('variable', 'relative_importance'),
+               skip_absent = T)
     }))
     
     if(prots == 'all'){
-      prots <- df[,.N,sample_size][,unique(N)]
+      prots <- max(df[,.N,sample_size][,unique(N)], na.rm = T)
     }
+    setorder(df, -relative_importance)
+    dt <- df[,head(.SD, prots),,by = c("sample_size")]
   }
   
-  dt <- df %>%
-    mutate(variable = reorder(variable, relative_importance)) %>%
-    group_by(sample_size, variable) %>%
-    arrange(desc(relative_importance)) %>%
-    ungroup() %>%
-    mutate(variable = factor(paste(variable, sample_size, sep = '_'),
-                             levels = rev(paste(variable, 
-                                                sample_size, sep ='_'))))%>%
-    as.data.table()
+  dt <- split(dt, by = 'sample_size')
   
-  g <- lapply(dt[,unique(sample_size)], function(x){
-    ggplot(data = head(dt[sample_size == x], prots), aes(variable, relative_importance))+
+  g <- lapply(dt,  function(x){
+    x$variable <- reorder(x$variable, x$relative_importance)
+    x[, sample_size := gsub('SampleSize','', sample_size)]
+    ggplot(data = x, aes(variable, relative_importance))+
       geom_col()+
-      labs(x = "Protein", y = "Relative Importance", title = x)+
-      scale_x_discrete(breaks = dt$variable,
-                       labels = gsub("_.*",'',as.character(dt$variable)))+
+      labs(x = "Protein", y = "Relative Importance", 
+           title = paste('Sample Size', unique(x$sample_size)))+
+      scale_x_discrete(breaks = x$variable,
+                       labels = gsub("_.*",'',as.character(x$variable)))+
       theme_MSstats()+
       coord_flip()
   })
-  names(g) <- dt[,unique(sample_size)]
-  
-  
+  names(g) <- names(dt)
   return(g)
 }
 
@@ -814,123 +837,132 @@ run_classification <- function(sim, inputs, use_h2o, seed, session = session){
   return(classification)
 }
 
-
-
-
-
-
-
-###################
-
-
-simulateDataset <- function (data, annotation, num_simulations = 10,
-                             expected_FC = "data", list_diff_proteins = NULL,
-                             select_simulated_proteins = "proportion", 
-                             protein_proportion = 1, protein_number = 1000,
-                             samples_per_group = 50, simulate_validation = FALSE,
-                             valid_samples_per_group = 50){
+sample_size_classification <- function(n_samp, sim_data, classifier, k = 10,
+                                       family = 'binomial', session = NULL){
+  samp <- unlist(strsplit(n_samp,','))
+  pred_acc <- list()
+  f_imp <- list()
+  models <- list()
+  max_val <- 0
+  iter <- 0
   
-  parameters <- MSstatsSampleSize::estimateVar(data, annotation)
-  data <- data[, annotation$BioReplicate]
-  group <- as.factor(as.character(annotation$Condition))
-  num_total_proteins <- nrow(data)
-  mu <- parameters$mu
-  sigma <- parameters$sigma
-  promean <- parameters$promean
-  proteins <- parameters$protein
-  if (is.element("data", expected_FC)) {
-    sim_mu <- mu
-    sim_sigma <- sigma
-  }
-  else {
-    sim_mu <- mu
-    sim_sigma <- sigma
-    baseline <- names(expected_FC)[expected_FC == 1]
-    otherlines <- names(expected_FC)[expected_FC != 1]
-    for (i in seq_along(otherlines)) {
-      sim_mu[rownames(sim_mu) %in% list_diff_proteins, 
-             otherlines[i]] <- sim_mu[rownames(sim_mu) %in% 
-                                        list_diff_proteins, baseline] * expected_FC[otherlines[i]]
-      sim_mu[!rownames(sim_mu) %in% list_diff_proteins, 
-             otherlines[i]] <- sim_mu[!rownames(sim_mu) %in% 
-                                        list_diff_proteins, baseline]
+  for(i in seq_along(samp)){
+    res <- list()
+    imp <- list()
+    model <- list()
+    list_train <- sim_data[[i]]$simulated
+    
+    fam_check <- unique(as.vector(sim_data[[i]]$validation[, 1]))
+    
+    if(length(fam_check) > 2){
+      family <- 'multinomial'
     }
+    
+    tryCatch({
+      for(j in seq_along(list_train)){
+        if(max_val == 0){
+          max_val <- length(list_train) * length(samp)
+        }
+        iter = iter + 1/max_val
+        
+        status(detail = sprintf("Classifying Sample Size %s of %s, Simulation %s of %s",
+                                i, length(samp), j, length(list_train)),
+               session = session, value = iter)
+        
+        res[[paste0('Sim',j)]] <- classify(df = as.data.table(list_train[[j]]), 
+                                           val = as.data.table(sim_data[[i]]$validation), 
+                                           alg = classifier,
+                                           family = family, k = k)
+      }
+    }, error = function(e){
+      print(e)
+    })
+    
+    for(j in seq_along(res)){
+      acc <- data.frame('Sample' = samp[i],'accuracy' = res[[j]]$accuracy)
+      pred_acc <- append(list(acc), pred_acc)
+      
+      imp[[j]] <- data.table('Simulation' = j, res[[j]]$f_imp[1:k])
+      model[[j]] <- res[[j]]$model
+    }
+    
+    imp <- do.call('rbind', imp)
+    imp <- dcast(imp, rn~Simulation, value.var = 'Overall')
+    imp <- cbind('protein' = imp[,1],
+                 'importance' = rowSums(imp[,-1], na.rm = T))
+    imp[, importance := (importance-min(importance))/(max(importance) - min(importance))]
+    
+    models[[as.character(samp[i])]] <- model
+    f_imp[[as.character(samp[i])]] <- imp
   }
-  ngroup <- length(unique(group))
-  num_samples <- rep(samples_per_group, ngroup)
-  names(num_samples) <- unique(group)
-  train_size <- samples_per_group * ngroup
-  status(detail = paste(" Size of training data to simulate: ", train_size))
-  if (select_simulated_proteins == "proportion") {
-    nproteins <- nrow(mu)
-    protein_num <- round(nproteins * protein_proportion)
-  }
-  else {
-    protein_num <- protein_number
-  }
-  selectedPros <- order(promean, decreasing = TRUE)[1:protein_num]
-  mu_2 <- mu[selectedPros, ]
-  sigma_2 <- sigma[selectedPros, ]
-  if (simulate_validation) {
-    valid <- MSstatsSampleSize:::.sampleSimulation(m = valid_samples_per_group, 
-                               mu = mu_2, sigma = sigma_2)
-    valid_X <- as.data.frame(valid$X)
-    valid_Y <- as.factor(valid$Y)
-  }
-  else {
-    valid_X <- as.data.frame(apply(data[selectedPros, ], 
-                                   1, function(x) MSstatsSampleSize:::.randomImputation(x)))
-    valid_Y <- as.factor(group)
-  }
-  status(detail = paste(" Number of proteins to simulate: ", protein_num))
-  status(detail = " Start to run the simulation...")
-  simulation_train_Xs <- list()
-  simulation_train_Ys <- list()
-  for (i in seq_len(num_simulations)) {
-    status(detail = paste("  Simulation: ", i))
-    train <- MSstatsSampleSize:::.sampleSimulation(m = samples_per_group, mu = mu_2, 
-                               sigma = sigma_2)
-    X <- as.data.frame(train$X)
-    Y <- as.factor(train$Y)
-    simulation_train_Xs[[paste("Simulation", i, sep = "")]] <- X
-    simulation_train_Ys[[paste("Simulation", i, sep = "")]] <- Y
-    gc()
-  }
-  
-  status(detail = " Simulation completed.")
-  return(list(num_proteins = protein_num, num_samples = num_samples, 
-              simulation_train_Xs = simulation_train_Xs, simulation_train_Ys = simulation_train_Ys, 
-              input_X = t(data), input_Y = group, valid_X = valid_X, 
-              valid_Y = valid_Y))
+  return(list('res' = models, 'samp' = as.numeric(samp), 'pred_acc' = pred_acc,
+              'f_imp' = f_imp))
 }
 
 
 
-
-sampleSimulation <- function (m, mu, sigma) {
-  nproteins <- nrow(mu)
-  ngroup <- ncol(mu)
-  sigma <- sigma[, colnames(mu)]
-  samplesize <- rep(m, ngroup)
-  sim_matrix <- matrix(rep(0, nproteins * sum(samplesize)), 
-                       ncol = sum(samplesize))
-  
-  for (i in seq_len(nproteins)) {
-    index <- 1
-    for (j in seq_len(ngroup)) {
-      sim_matrix[i, index:(index + samplesize[j] - 1)] <- rnorm(samplesize[j], 
-                                                                mu[i, j], sigma[i, j])
-      index <- index + samplesize[j]
-    }
+classify <- function(df, val, alg, family, k){
+  if(alg == 'logreg'){
+    alg = 'glm'
   }
   
-  sim_matrix <- t(sim_matrix)
-  colnames(sim_matrix) <- rownames(mu)
-  group <- rep(colnames(mu), times = samplesize)
-  index <- sample(length(group), length(group))
-  sim_matrix <- sim_matrix[index, ]
-  group <- group[index]
-  return(list(X = sim_matrix, Y = as.factor(group)))
+  if(alg == 'glm'){
+    if(family == 'multinomial'){
+      model <- nnet::multinom(condition~., data =df , maxit, MaxNWts = 84581)
+      f_imp <- caret::varImp(model, scale = T)
+      sel_imp <- rownames(f_imp)[1:k]
+      sel_imp <- gsub('`','',sel_imp)
+      if(!all(sel_imp %in% names(df))){
+        sel_imp <- gsub('`','',sel_imp)
+      }
+      model <- nnet::multinom(condition~., data = df[,, c('condition', sel_imp)],
+                              maxit=1000,MaxNWts=84581)
+    } else {
+      model <- caret::train(make.names(condition)~.,data = df,
+                            method = alg, family = family,
+                            trControl = caret::trainControl(method = "none",
+                                                            classProbs = TRUE))
+      f_imp <- caret::varImp(model, scale = TRUE)
+      i_ff <- data.table::as.data.table(f_imp$importance, keep.rownames = T)
+      setorder(i_ff, -Overall)
+      sel_imp <- i_ff[1:k, rn]
+      if(!all(sel_imp %in% names(df))){
+        sel_imp <- gsub('`','',sel_imp)
+      }
+      model <- caret::train(make.names(condition)~., 
+                            data = df[,, c('condition', sel_imp)], 
+                            method = alg,
+                            trControl = caret::trainControl(method = "none",
+                                                            classProbs = TRUE))
+    }
+  } else {
+    model <- caret::train(make.names(condition)~., data = df,
+                          method = alg, 
+                          trControl = caret::trainControl(method = "none", 
+                                                          classProbs = TRUE)) 
+    
+    f_imp <- caret::varImp(model, scale = TRUE)
+    i_ff <- data.table::as.data.table(f_imp$importance, keep.rownames = T)
+    setorder(i_ff, -Overall)
+    sel_imp <- i_ff[1:k, rn]
+    
+    if(!all(sel_imp %in% names(df))){
+      sel_imp <- gsub('`','',sel_imp)
+    }
+    model <- caret::train(make.names(condition)~.,
+                          data = df[,, c('condition', sel_imp)],
+                          method = alg, 
+                          trControl = caret::trainControl(method = "none", 
+                                                          classProbs = TRUE)) 
+    
+  }
+  
+  pred <- predict(model, val[,-1])
+  cm <- table(pred, val$condition)
+  
+  acc <- sum(diag(cm))/sum(cm)
+  r_list <- list('accuracy' = acc, 'model' = model, 'f_imp' = i_ff)
+  return(r_list)
 }
 
 

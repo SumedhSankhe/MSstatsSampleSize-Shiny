@@ -208,7 +208,6 @@ function(session, input, output) {
                                orig_group = input$b_group)
         exp_fc <- rbind(baseline, fc_values)
       }
-      browser()
       data <- show_faults({
         simulate_grid(data = data()$long_data, stats = data()$var_summary,
                       n_group = data()$n_group, n_prots = data()$n_prot,
@@ -414,6 +413,7 @@ function(session, input, output) {
   ##### Render Model training plots ####
   output$acc_plot <- renderPlot({
     shiny::validate(shiny::need(rv$classification, "No Trained Models Found"))
+    browser()
     if(rv$use_h2o)
       shiny::validate(shiny::need(rv$classification$models, "No Trained Models Found"))
     show_faults(plot_acc(data = rv$classification, use_h2o = rv$use_h2o,
@@ -427,7 +427,7 @@ function(session, input, output) {
       shiny::validate(shiny::need(rv$classification$models, "No Trained Models Found"))
     
     show_faults(plot_var_imp(data = rv$classification, sample = input$s_size,
-                             use_h2o = rv$use_h2o),
+                             sim = input$n_sim, use_h2o = rv$use_h2o),
                 session = session)
 
   })

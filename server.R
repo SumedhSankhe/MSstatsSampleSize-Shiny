@@ -10,7 +10,9 @@ function(session, input, output) {
       h2o::h2o.shutdown(prompt = F)
       }, silent = T)
     status("Shutting Down Application")
-    close(FILE_CONN)
+    if(exists('FILE_CONN'))
+      close(FILE_CONN)
+    rm(FILE_CONN, envir = .GlobalEnv)
     stopApp()
   })
   
@@ -27,10 +29,9 @@ function(session, input, output) {
   #### Toggle control for sidebar ####
   # Enable or disable fileInputs based on type of data selected
   observeEvent(input$data_format,{
-    shinyjs::toggleElement(id = "standard_count", anim = T, animType = "fade",
-                           condition = input$data_format == "standard")
-    shinyjs::toggleElement(id = "standard_annot", anim = T, animType = "fade",
-                           condition = input$data_format == "standard")
+    ids = c("standard_count", "standard_annot")
+    lapply(ids, shinyjs::toggleElement, anim = T, animType = "fade",
+           condition = input$data_format == "standard")
   })
 
   #### Import data, action click ####
@@ -43,11 +44,11 @@ function(session, input, output) {
     disable_btns <- c("download_plots", "back_varimp", "fwd_varimp", 
                       "generate_report", "run_model","nav_to_exp",
                       "fwd","back","download_pca", "run_model")
+    
     lapply(disable_btns, shinyjs::disable)
     updateSelectInput(session = session, inputId ="simulations", label = "Simulations",
                       choices = SIM_CHOICES)
     output$default <- renderText("")
-    
     withProgress({
       data <- show_faults(
         expr = format_data(format = input$data_format,
@@ -113,18 +114,16 @@ function(session, input, output) {
   })
   
   observeEvent(input$exp_fc,{
-    shinyjs::toggleElement(id = "diff_prot",
-                           condition = input$exp_fc != T)
-    shinyjs::toggleElement(id = "diff_prot_help",
-                           condition = input$exp_fc != T)
-    shinyjs::toggleElement(id = "b_group",
-                           condition = input$exp_fc != T)
-    shinyjs::toggleElement(id = "b_group_help",
-                           condition = input$exp_fc != T)
-    shinyjs::toggleElement(id = "fc_values", 
-                           condition  = input$exp_fc != T)
-    shinyjs::toggleElement(id = "fc_values_help", 
-                           condition = input$exp_fc != T)
+    ids = c("upload_da_prots", "diff_prot", "diff_prot_help", "b_group", 
+            "b_group_help", "fc_values", "fc_values_help")
+    
+    lapply(ids, shinyjs::toggleElement, anim = T, animType = "fade",
+           condition = input$exp_fc != T)
+  })
+  
+  observeEvent(input$upload_da_prots,{
+    shinyjs::toggleElement(id = "da_prots_file", anim = T, animType = "fade",
+                           condition = input$upload_da_prots == T)
   })
   
   # toggle between number and proportion of the proteins
@@ -337,135 +336,33 @@ function(session, input, output) {
   })
   
   ##### Toggle switches based on input classifier for H2o #####
-  #TODO make this chunk simplier
   observeEvent(input$checkbox_inputs, {
-    rv$use_h2o <- ifelse(TUNING[1] %in% input$checkbox_inputs, T, F)
-    shinyjs::toggleElement(id = "stop_metric",
-                           condition = (all(TUNING %in% input$checkbox_inputs) &&
-                                          input$classifier %in% c("rf","logreg")))
-    shinyjs::toggleElement(id = "stop_metric_help",
-                           condition = (all(TUNING %in% input$checkbox_inputs) &&
-                                          input$classifier %in% c("rf","logreg")))
+    rv$use_h2o <- ifelse("Use h2o Package" %in% input$checkbox_inputs, T, F)
     
-    shinyjs::toggleElement(id = "nfolds",
-                           condition = (all(TUNING %in% input$checkbox_inputs) &&
-                                          input$classifier == "rf"))
-    shinyjs::toggleElement(id = "nfolds_help",
-                           condition = (all(TUNING %in% input$checkbox_inputs) &&
-                                          input$classifier == "rf"))
-    
-    shinyjs::toggleElement(id = "f_assignment",
-                           condition = (all(TUNING %in% input$checkbox_inputs) &&
-                                          input$classifier %in% c("rf", "naive_bayes")))
-    shinyjs::toggleElement(id = "f_assignment_help",
-                           condition = (all(TUNING %in% input$checkbox_inputs) &&
-                                         input$classifier %in% c("rf", "naive_bayes")))
-    
-    shinyjs::toggleElement(id = "iters",
-                           condition = (all(TUNING %in% input$checkbox_inputs) &&
-                                          input$classifier == "svmLinear"))
-    shinyjs::toggleElement(id = "iters_help", 
-                           condition = (all(TUNING %in% input$checkbox_inputs) &&
-                                          input$classifier == "svmLinear"))
-    
-    shinyjs::toggleElement(id = "link",
-                           condition = (all(TUNING %in% input$checkbox_inputs) &&
-                                          input$classifier == "logreg"))
-    shinyjs::toggleElement(id = "link_help",
-                           condition = (all(TUNING %in% input$checkbox_inputs) &&
-                                          input$classifier == "logreg"))
-    
-    shinyjs::toggleElement(id = "family",
-                           condition = (all(TUNING %in% input$checkbox_inputs) &&
-                                          input$classifier == "logreg"))
-    shinyjs::toggleElement(id = "family_help",
-                           condition = (all(TUNING %in% input$checkbox_inputs) &&
-                                          input$classifier == "logreg"))
-    
-    shinyjs::toggleElement(id = "solver",
-                           condition = (all(TUNING %in% input$checkbox_inputs) &&
-                                          input$classifier == "logreg"))
-    shinyjs::toggleElement(id = "solver_help",
-                           condition = (all(TUNING %in% input$checkbox_inputs) &&
-                                          input$classifier == "logreg"))
-    
-    shinyjs::toggleElement(id = "laplace",
-                           condition = (all(TUNING %in% input$checkbox_inputs) &&
-                                          input$classifier == "naive_bayes"))
-    shinyjs::toggleElement(id = "laplace_help",
-                           condition = (all(TUNING %in% input$checkbox_inputs) &&
-                                          input$classifier == "naive_bayes"))
-    
-    shinyjs::toggleElement(id = "eps_sdev",
-                           condition = (all(TUNING %in% input$checkbox_inputs) &&
-                                          input$classifier == "naive_bayes"))
-    shinyjs::toggleElement(id = "eps_sdev_help",
-                           condition = (all(TUNING %in% input$checkbox_inputs) &&
-                                          input$classifier == "naive_bayes"))
-    
-    shinyjs::toggleElement(id = "min_sdev",
-                           condition = (all(TUNING %in% input$checkbox_inputs) &&
-                                          input$classifier == "naive_bayes"))
-    shinyjs::toggleElement(id = "min_sdev_help",
-                           condition = (all(TUNING %in% input$checkbox_inputs) &&
-                                          input$classifier == "naive_bayes"))
-    
-    shinyjs::toggleElement(id = "caret_rf",
-                           condition = (TUNING[2] == input$checkbox_inputs &&
-                                          TUNING[1] !=  input$checkbox_inputs &&
-                                          input$classifier == 'rf' &&
-                                          !is.null(input$checkbox_inputs)))
-    shinyjs::toggleElement(id = "caret_rf_help",
-                           condition = (TUNING[2] == input$checkbox_inputs &&
-                                          TUNING[1] !=  input$checkbox_inputs &&
-                                          input$classifier == 'rf' &&
-                                          !is.null(input$checkbox_inputs)))
+    #browser()
+    op <- tuning_params(checkbox = input$checkbox_inputs,
+                         alg = input$classifier)
+    if(op$enable){
+      lapply(op$hide_ids, shinyjs::hideElement, anim = T, animType = "fade")
+      lapply(op$show_ids, shinyjs::showElement, anim = T, animType = "fade")
+    }else{
+      lapply(op$ids, shinyjs::hideElement, anim = T, animType = "fade")
+    }
   }, ignoreNULL = FALSE)
   
   observeEvent(input$classifier, {
-    shinyjs::toggleElement(id = "stop_metric",
-                           condition = (all(TUNING %in% input$checkbox_inputs) &&
-                                          input$classifier %in% c("rf","logreg")))
-    shinyjs::toggleElement(id = "nfolds",
-                           condition = (all(TUNING %in% input$checkbox_inputs) &&
-                                          input$classifier == "rf"))
-    shinyjs::toggleElement(id = "f_assignment",
-                           condition = (all(TUNING %in% input$checkbox_inputs) &&
-                                          input$classifier %in% c("rf", "naive_bayes")))
-    shinyjs::toggleElement(id = "iters",
-                           condition = (all(TUNING %in% input$checkbox_inputs) &&
-                                          input$classifier == "svmLinear"))
-    shinyjs::toggleElement(id = "link",
-                           condition = (all(TUNING %in% input$checkbox_inputs) &&
-                                          input$classifier == "logreg"))
-    shinyjs::toggleElement(id = "family",
-                           condition = (all(TUNING %in% input$checkbox_inputs) &&
-                                          input$classifier == "logreg"))
-    shinyjs::toggleElement(id = "solver",
-                           condition = (all(TUNING %in% input$checkbox_inputs) &&
-                                          input$classifier == "logreg"))
-    shinyjs::toggleElement(id = "laplace",
-                           condition = (all(TUNING %in% input$checkbox_inputs) &&
-                                          input$classifier == "naive_bayes"))
-    shinyjs::toggleElement(id = "eps_sdev",
-                           condition = (all(TUNING %in% input$checkbox_inputs) &&
-                                          input$classifier == "naive_bayes"))
-    shinyjs::toggleElement(id = "min_sdev",
-                           condition = (all(TUNING %in% input$checkbox_inputs) &&
-                                          input$classifier == "naive_bayes"))
     
-    shinyjs::toggleElement(id = "caret_rf",
-                           condition = (TUNING[2] == input$checkbox_inputs &&
-                                          TUNING[1] !=  input$checkbox_inputs &&
-                                          input$classifier == 'rf' &&
-                                          !is.null(input$checkbox_inputs)))
-    shinyjs::toggleElement(id = "caret_rf_help",
-                           condition = (TUNING[2] == input$checkbox_inputs &&
-                                          TUNING[1] !=  input$checkbox_inputs &&
-                                          input$classifier == 'rf' &&
-                                          !is.null(input$checkbox_inputs)))
-    
+    op <- tuning_params(checkbox = input$checkbox_inputs,
+                        alg = input$classifier)
+    if(op$enable){
+      lapply(op$hide_ids, shinyjs::hideElement, anim = T, animType = "fade")
+      lapply(op$show_ids, shinyjs::showElement, anim = T, animType = "fade")
+    }else{
+      lapply(op$ids, shinyjs::hideElement, anim = T, animType = "fade")
+    }
   })
+  
+  
   #### Run Classification #####
   observeEvent(input$run_model,{
     withProgress({

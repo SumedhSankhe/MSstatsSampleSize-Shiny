@@ -10,19 +10,21 @@
 #' @param session A shiny object of shiny web app, defaults to NULL
 #' @return A return object of type as specified by the expression being executed
 #' @references https://github.com/SumedhSankhe/workBench/blob/fd5e808e86e849a933a924735d30348974212fc3/functions.R#L1-L37
-show_faults <- function(..., session = NULL){
+show_faults <- function(..., log = T, session = NULL){
   
-  if ("FILE_CONN" %in% ls(envir = .GlobalEnv)) {
-    log <- get("FILE_CONN", envir = .GlobalEnv)
-  } else {
-    LOG_DIR <- file.path(getwd(),'logs')
-    dir.create(LOG_DIR, showWarnings = F)
-    LOG_FILE <- sprintf("Auto_Generate_Log_%s.Rout", 
-                        format(Sys.time(),"%Y%m%d%H%M%S"))
-    LOG_FILE <<- file.path(LOG_DIR,LOG_FILE)
-    FILE_CONN <<- file(LOG_FILE, open='wt')
-    writeLines(capture.output(sessionInfo()), FILE_CONN)
-    writeLines("\n\n ############## LOG ############# \n\n", FILE_CONN)
+  if(log){
+    if(exists("FILE_CONN") && isOpen(FILE_CONN)){
+      log <- get("FILE_CONN", envir = .GlobalEnv)
+    }else{
+      LOG_DIR <- file.path(getwd(),'logs')
+      dir.create(LOG_DIR, showWarnings = F)
+      FILE <- sprintf("MSstatsSSE_Log_%s.Rout", 
+                      format(Sys.time(),"%Y%m%d%H%M%S"))
+      assign("LOG_FILE", file.path(LOG_DIR, FILE), envir = .GlobalEnv)
+      assign("FILE_CONN", file(LOG_FILE, open='wt'), envir = .GlobalEnv)
+      writeLines(capture.output(sessionInfo()), FILE_CONN)
+      writeLines("\n\n ############## LOG ############# \n\n", FILE_CONN) 
+    }
   }
   
   #initiate variables to null
@@ -203,7 +205,7 @@ plot_acc <- function(data, use_h2o, alg = NA, session = NULL, ...){
     }))
   }else{
     shiny::validate(shiny::need(data$samp, "No Trained Models Found"))
-    df <- rbindlist(data$pred_acc)
+    df <- data$pred_acc
     names(df) <- c("sample","mean_acc")
   }
   #calculate the mean accuracy for the sample
@@ -259,13 +261,8 @@ plot_acc <- function(data, use_h2o, alg = NA, session = NULL, ...){
 #' @param use_h2o A logical input to extract h2o based data model
 #' @param prots Number of proteins to plots, takes "all" to select all proteins
 #' @return A ggplot2 object
-plot_var_imp <- function(data, sample = "all", alg = NA, use_h2o = F, prots = 10,
-                         ...){
+plot_var_imp <- function(data, sample = NA, alg = NA, use_h2o = F, ...){
   if(use_h2o){
-    #identify number of proteins if complete variable imporatnaces are requested
-    if(prots == "all"){
-      prots <- nrow(data$models[[1]]$var_imp)
-    }
     shiny::validate(shiny::need(data$models, "No Trained Models Found"))
     shiny::validate(
       shiny::need(!alg %in% c("svmLinear", "naive_bayes"),
@@ -277,61 +274,28 @@ plot_var_imp <- function(data, sample = "all", alg = NA, use_h2o = F, prots = 10
     if(sample != "all"){
       samp <- samp[like(samp, sample)]
     }
-    
+    sample <- as.numeric(gsub("Sample","", sample))
     #extract data from the h2o model structure
     df <- rbindlist(lapply(samp, function(x){
-      dt <- as.data.table(data[[x]]$var_imp)
-      setorder(dt, -scaled_importance)
-      dt$name <- x
-      dt
+      data[[x]]$var_imp
     }))
-    df[, c("sample_size", "simulation") := tstrsplit(name, " ", fixed = T)]
-    df <- df[, lapply(.SD, mean), .SDcols = 2:4, by = c("variable", "sample_size")]
-    df[, relative_importance := scaled_importance]
-    
-  }else{
-    if(sample == "all"){
-      sample <- as.character(data$samp)
-    }else{
-      sample <- gsub("Sample","", sample)
-    }
-    
-    df <- rbindlist(lapply(sample, function(x){
-      d <- data$f_imp[[x]]
-      d[, sample_size := paste("SampleSize",x)]
-      setnames(d, c("protein.rn", "importance"),
-               c("variable", "relative_importance"),
-               skip_absent = T)
-      d[, variable := gsub('`', '', variable)]
-      d[!is.na(variable)]
-    }))
-    
-    if(prots == "all"){
-      prots <- max(df[,.N,sample_size][,unique(N)], na.rm = T)
-    }
+    df <- df[,.N, variable]
+    setorder(df, -N)
+    df <- df[1:10]
+    setnames(df, "variable", "protein")
+  } else{
+    sample <- as.numeric(gsub("Sample","", sample))
+    df <- data$f_imp[Sample == sample]
   }
-  #TODO This is ugly needs to be re-thought, partial implementation on dev
-  dt <- df %>%
-    mutate(variable = reorder(variable, relative_importance)) %>%
-    group_by(sample_size, variable) %>%
-    arrange(desc(relative_importance)) %>%
-    ungroup() %>%
-    mutate(variable = factor(paste(variable, sample_size, sep = "_"),
-                             levels = rev(paste(variable, 
-                                                sample_size, sep ="_"))))%>%
-    as.data.table()
   
-  g <- lapply(dt[,unique(sample_size)], function(x){
-    dat <- dt[sample_size == x]
-    ggplot(data = dat, aes(variable, relative_importance))+
-      geom_col()+
-      labs(x = "Protein", y = "Relative Importance", title = x)+
-      scale_x_discrete(breaks = dt$variable,
-                       labels = gsub("_.*","",as.character(dt$variable)))+
-      theme_MSstats(...)+
-      coord_flip()
-  })
-  names(g) <- dt[,unique(sample_size)]
+  
+  g <- ggplot(data = df, aes(x = reorder(protein,N), y = N))+
+    geom_col()+
+    labs(x = "Protein", y = "Frequency", 
+         title = paste("Sample Size", sample))+
+    theme_MSstats(...)+
+    coord_flip()
+  
   return(g)
 }
 
@@ -851,26 +815,28 @@ random_imputation <- function(data){
 }
 
 sample_simulation <- function(m,mu,sigma){
-  nproteins <- nrow(mu)
-  ngroup <- ncol(mu)
-  sigma <- sigma[, colnames(mu)]
-  samplesize <- rep(m, ngroup)
-  sim_matrix <- matrix(rep(0, nproteins * sum(samplesize)), 
-                       ncol = sum(samplesize))
-  for (i in seq_len(nproteins)) {
-    index <- 1
-    for (j in seq_len(ngroup)) {
-      sim_matrix[i, index:(index + samplesize[j] - 1)] <- rnorm(samplesize[j], 
-                                                                mu[i, j], sigma[i, j])
-      index <- index + samplesize[j]
+  tryCatch({
+    nproteins <- nrow(mu)
+    ngroup <- ncol(mu)
+    sigma <- sigma[, colnames(mu)]
+    samplesize <- rep(m, ngroup)
+    sim_matrix <- matrix(rep(0, nproteins * sum(samplesize)), 
+                         ncol = sum(samplesize))
+    for (i in seq_len(nproteins)) {
+      index <- 1
+      for (j in seq_len(ngroup)) {
+        sim_matrix[i, index:(index + samplesize[j] - 1)] <- rnorm(samplesize[j], 
+                                                                  mu[i, j], sigma[i, j])
+        index <- index + samplesize[j]
+      }
     }
-  }
-  sim_matrix <- t(sim_matrix)
-  colnames(sim_matrix) <- rownames(mu)
-  group <- rep(colnames(mu), times = samplesize)
-  index <- sample(length(group), length(group))
-  sim_matrix <- sim_matrix[index, ]
-  group <- group[index]
+    sim_matrix <- t(sim_matrix)
+    colnames(sim_matrix) <- rownames(mu)
+    group <- rep(colnames(mu), times = samplesize)
+    index <- sample(length(group), length(group))
+    sim_matrix <- sim_matrix[index, ]
+    group <- group[index]
+  })
   return(list(X = sim_matrix, Y = as.factor(group)))
 }
 
@@ -949,10 +915,10 @@ estimate_var <- function (data, annotation) {
     rownames(GroupMean) <- Proteins
     colnames(GroupMean) <- groups
     names(SampleMean) <- Proteins
-    status(detail = " Variance analysis completed.")
+    status(detail = "Variance analysis completed.")
   })
-  return(list(model = Models, protein = Proteins, promean = SampleMean, 
-              mu = GroupMean, sigma = GroupVar))
+  return(list(protein = Proteins, promean = SampleMean, mu = GroupMean, 
+              sigma = GroupVar))
 }
 
 #### Classification #####
@@ -1005,8 +971,7 @@ ss_classify_caret <- function(n_samp, sim_data, classifier, k = 10,
                               family = "binomial", session = NULL){
   samp <- unlist(strsplit(n_samp,","))
   pred_acc <- list()
-  f_imp <- list()
-  models <- list()
+  f_imp <- data.table()
   max_val <- 0
   iter <- 0
   
@@ -1027,7 +992,6 @@ ss_classify_caret <- function(n_samp, sim_data, classifier, k = 10,
     
     # use for loop instead of lapply or a parallel implementation of lapply
     # to provide the user with visual aid of the progress bar
-    # TODO figure out a vectorized approach with status outputs to the UI 
     for(j in seq_along(list_x)){
       if(max_val == 0){
         max_val <- length(list_x) * length(samp)
@@ -1058,22 +1022,25 @@ ss_classify_caret <- function(n_samp, sim_data, classifier, k = 10,
     # Get the top k most frequent proteins across all simulation runs
     imp_prots <- imp[,.N,rn]
     setorder(imp_prots,-N)
-    imp_prots <- imp_prots[1:k, rn]
-    imp <- imp[rn %in% imp_prots]
-    
-    #spreat out the protein importances and scale them 
-    imp <- dcast(imp, rn~Simulation, value.var = "Overall")
-    imp <- cbind("protein" = imp[,1],
-                 "importance" = rowSums(imp[,-1], na.rm = T))
-    imp[, importance := (importance-min(importance))/(max(importance) - min(importance))]
-
-    models[[as.character(samp[i])]] <- model
-    f_imp[[as.character(samp[i])]] <- imp
+    imp_prots <- imp_prots[1:k]
+    setnames(imp_prots, names(imp_prots), c("protein","N"))
+    imp_prots[, Sample := samp[i]]
+    f_imp <- rbind(f_imp, imp_prots)
+    # imp <- imp[rn %in% imp_prots]
+    # #spreat out the protein importances and scale them 
+    # imp <- dcast(imp, rn~Simulation, value.var = "Overall")
+    # imp <- cbind("protein" = imp[,1],
+    #              "importance" = rowSums(imp[,-1], na.rm = T))
+    # imp[, importance := (importance-min(importance))/(max(importance) - min(importance))]
+    # 
+    # models[[as.character(samp[i])]] <- model
+    # f_imp[[as.character(samp[i])]] <- imp
   }
   
-  rm(list_x, list_y, valid, df, max_val, acc)
+  rm(model, list_x, list_y, valid, df, max_val, acc, imp, imp_prots, res)
   
-  return(list("samp" = as.numeric(samp), "pred_acc" = pred_acc, "f_imp" = f_imp))
+  return(list("samp" = as.numeric(samp), "pred_acc" = rbindlist(pred_acc),
+              "f_imp" = f_imp))
 }
 
 
@@ -1191,6 +1158,7 @@ ss_classify_h2o <- function(n_samp, sim_data, classifier, stopping_metric = "AUT
                             seed = -1, nfolds = 0, fold_assignment = "AUTO", iters = 200,
                             alpha = 0, family, solver, link, min_sdev, laplace, eps,
                             session = NULL){
+  
   samp <- unlist(strsplit(n_samp,","))
   config <- h2o_config()
   h2o::h2o.init(nthreads = config$threads, max_mem_size = config$max_mem,
@@ -1198,6 +1166,7 @@ ss_classify_h2o <- function(n_samp, sim_data, classifier, stopping_metric = "AUT
   max_val <- 0
   iter <- 0
   modelz <- list()
+  f_imp <- data.table()
   
   for(i in samp){
     
@@ -1301,7 +1270,6 @@ ss_classify_h2o <- function(n_samp, sim_data, classifier, stopping_metric = "AUT
       
       name_val <- sprintf("Sample%s %s", i,  names(train_x_list)[index])
       var_imp <-  h2o::h2o.varimp(model)
-      
       rm(train, perf, cm, model)
       
       modelz[[name_val]] <- list("acc" = acc, "var_imp" = var_imp)
@@ -1324,3 +1292,23 @@ ss_classify_h2o <- function(n_samp, sim_data, classifier, stopping_metric = "AUT
 
 
 
+
+
+
+tuning_params <- function(...){
+  dots <- list(...)
+  params <- read.csv("params.csv", stringsAsFactors = F)
+  op <- list("enable" = F, "ids" = params$id)
+  
+  if("Parameter Tuning" %in% dots$checkbox){
+    if("Use h2o Package" %in% dots$checkbox){
+      show <- subset(params, classifier==dots$alg & use_h2o ==T)
+      hide <- subset(params, classifier!=dots$alg || use_h2o == F)
+    } else{
+      show <- subset(params, classifier==dots$alg & use_h2o ==F)
+      hide <- subset(params, classifier!=dots$alg || use_h2o ==T)
+    }
+    op <- list("enable" = T, "show_ids" = show$id, "hide_ids" = hide$id)
+  }
+  return(op)
+}  

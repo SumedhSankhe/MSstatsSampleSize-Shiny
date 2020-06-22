@@ -15,17 +15,6 @@ suppressMessages({
 })
 source('functions.R')
 
-
-#### logging file ####
-LOG_DIR <- file.path(getwd(),'logs')
-dir.create(LOG_DIR, showWarnings = F)
-LOG_FILE <- sprintf("MSstats_SS_%s.Rout",
-                    format(Sys.time(),"%Y%m%d%H%M%S"))
-LOG_FILE <- file.path(LOG_DIR,LOG_FILE)
-FILE_CONN <- file(LOG_FILE, open='wt')
-writeLines(capture.output(sessionInfo()), FILE_CONN)
-writeLines("\n\n ############## LOG ############# \n\n", FILE_CONN)
-
 #### GLOBAL VARS ####
 FORMATS_LIST <- list("Protein-level quantification" = "standard", 
                      "Example from MSstatsSampleSize" = "examples")
@@ -56,7 +45,6 @@ LINK <- c("family_default", "identity", "logit", "log", "inverse", "tweedie",
           "ologit")
 
 B_GROUP <- ""
-TUNING <- c("Use h2o Package", "Parameter Tuning")
 CURRMODEL <- ""
 SIM_CHOICES <- 0
 

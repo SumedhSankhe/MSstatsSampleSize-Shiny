@@ -1303,10 +1303,10 @@ tuning_params <- function(...){
   if("Parameter Tuning" %in% dots$checkbox){
     if("Use h2o Package" %in% dots$checkbox){
       show <- subset(params, classifier==dots$alg & use_h2o ==T)
-      hide <- subset(params, classifier!=dots$alg || use_h2o == F)
+      hide <- subset(params, classifier!=dots$alg | use_h2o == F)
     } else{
       show <- subset(params, classifier==dots$alg & use_h2o ==F)
-      hide <- subset(params, classifier!=dots$alg || use_h2o ==T)
+      hide <- subset(params, classifier!=dots$alg | use_h2o ==T)
     }
     op <- list("enable" = T, "show_ids" = show$id, "hide_ids" = hide$id)
   }

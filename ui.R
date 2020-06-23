@@ -195,11 +195,21 @@ dashboardPage(
                                     id = "fc_values_help"),
               br(),
               # Input vector off different proteins
-              textInput(inputId = "diff_prot", label = "List of Differential Abundant Proteins",
+              
+              checkboxGroupInput(inputId = "da_prots", label = "How do you want to specify Differentially
+                                 abundant proteins ?", inline = T,
+                                 choiceNames = list("Text input", "Upload csv file"),
+                                 choiceValues = list(F, T), selected = F),
+              
+              textInput(inputId = "diff_prot", 
+                        label = "List of Differential Abundant Proteins",
                         value = NULL,
                         placeholder = "List of comma separated Proteins") %>%
                 shinyhelper::helper(type = "markdown", content = "diff_prot",
                                     id = "diff_prot_help"),
+              fileInput(inputId = "da_prots_file",
+                        label = "DA Proteins File Upload", multiple = F, 
+                        accept = EXTENSTIONS),
               # Select number/proportion the proteins be simulated with
               selectInput(inputId = "sel_sim_prot", label = "Select Proteins To Simulate",
                           choices = c("Proportion", "Number"), #capitalize this

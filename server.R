@@ -114,17 +114,58 @@ function(session, input, output) {
   })
   
   observeEvent(input$exp_fc,{
-    ids = c("upload_da_prots", "diff_prot", "diff_prot_help", "b_group", 
+    ids = c("da_prots", "b_group", #"da_prots_file", "diff_prot", "diff_prot_help", 
             "b_group_help", "fc_values", "fc_values_help")
     
     lapply(ids, shinyjs::toggleElement, anim = T, animType = "fade",
            condition = input$exp_fc != T)
+    
+    ids <- c("da_prots_file", "diff_prot", "diff_prot_help")
+    cond <- c(input$da_prots == T && input$exp_fc != T, 
+              input$da_prots == F && input$exp_fc != T)
+    
+    if(cond[1]){
+      shinyjs::hideElement(id = "diff_prot", anim = T, animType = "fade")
+      shinyjs::hideElement(id = "diff_prot_help", anim = T, animType = "fade")
+      shinyjs::showElement(id = "da_prots_file", anim = T, animType = "fade")
+    } else if(cond[2]){
+      shinyjs::hideElement(id = "da_prot_file", anim = T, animType = "fade")
+      shinyjs::showElement(id = "diff_prot", anim = T, animType = "fade")
+      shinyjs::showElement(id = "diff_prot", anim = T, animType = "fade")
+    } else{
+      lapply(ids, shinyjs::hideElement, anim = T, animType = "fade")
+    }
   })
   
-  observeEvent(input$upload_da_prots,{
-    shinyjs::toggleElement(id = "da_prots_file", anim = T, animType = "fade",
-                           condition = input$upload_da_prots == T)
-  })
+  observeEvent(input$da_prots,{
+    # browser()
+    ids <- c("da_prots_file", "diff_prot", "diff_prot_help")
+    if(length(input$da_prots) >1 || is.null(input$da_prots)){
+      lapply(ids, shinyjs::hideElement, anim = T, animType = "fade")
+      showNotification("Please select either of 'Text input' or 'Upload csv file'
+                        to specify the differentially abundant proteins.",
+                       duration = 20, type = "error", session = session, 
+                       id = "error") 
+    }
+    validate(need(length(input$da_prots) ==1, 
+                  "Please select either among the two options for DA proteins"))
+    
+    cond <- c(input$da_prots == T && input$exp_fc != T, 
+              input$da_prots == F && input$exp_fc != T)
+    
+    if(cond[1]){
+      shinyjs::hideElement(id = "diff_prot", anim = T, animType = "fade")
+      shinyjs::hideElement(id = "diff_prot_help", anim = T, animType = "fade")
+      shinyjs::showElement(id = "da_prots_file", anim = T, animType = "fade")
+    } else if(cond[2]){
+      shinyjs::hideElement(id = "da_prot_file", anim = T, animType = "fade")
+      shinyjs::showElement(id = "diff_prot", anim = T, animType = "fade")
+      shinyjs::showElement(id = "diff_prot", anim = T, animType = "fade")
+    } else{
+      lapply(ids, shinyjs::hideElement, anim = T, animType = "fade")
+    }
+    
+  }, ignoreNULL = F)
   
   # toggle between number and proportion of the proteins
   observeEvent(input$sel_sim_prot,{
@@ -444,10 +485,14 @@ function(session, input, output) {
       plots <-list(plot_acc(data = rv$classification, use_h2o = rv$use_h2o,
                             alg = names(MODELS)[which(MODELS %in% input$classifier)],
                             x.axis.size = 4, y.axis.size = 4,margin = 0.5))
-      plots <- append(plots, plot_var_imp(data = rv$classification, sample = 'all',
-                                          use_h2o = rv$use_h2o, alg = input$classifier,
-                                          prots = 'all', x.axis.size = 4, 
-                                          y.axis.size = 5,margin = 0.5))
+      for(i in seq_along(samp_size)){
+        plots <- append(plots, list(plot_var_imp(data = rv$classification, 
+                                            sample = samp_size[i],
+                                            use_h2o = rv$use_h2o, 
+                                            alg = input$classifier,
+                                            prots = 'all', x.axis.size = 4, 
+                                            y.axis.size = 5,margin = 0.5)))
+      }
       
       seqs <- seq(4,length(plots), 4)
       library(gridExtra)

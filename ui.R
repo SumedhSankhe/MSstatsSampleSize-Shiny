@@ -157,22 +157,12 @@ dashboardPage(
           ),
         ##### Checkboxes for file Input and set seed options ####
         fluidRow(
-          # csv file uploads for parameters --- disabled not completely scoped out
-          # column(3, shinyjs::disabled(checkboxInput(inputId = "upload_params",
-          #                                           label = "Upload Simulation Parameters from csv"))),
-          # set seed disabled not completely scoped out
           column(1, checkboxInput(input = "set_seed",
                                   label = "Set Seed")),
           column(1, numericInput(inputId = "seed",
                                  label="Value", value=10,
                                   step = 1))
-          # column(1, actionButton(inputId = 'debug', label="debug"))
         ),
-        #### File Input to upload a simulation parameter csv ####
-        # fileInput(input = "param_input", label = "Upload Parameters in specified format",
-        #           multiple = F, accept = c("text/csv",
-        #                                    "text/comma-separated-values,text/plain",
-        #                                    ".csv", "text/tab-separated-values", ".tsv")),
         fluidRow(
           #### Box to input simulation parameters from the dashboard ######
           box(id = "param_box", title = "Parameters For Simulating DataSets",
@@ -181,6 +171,10 @@ dashboardPage(
               numericInput(inputId = "n_sim", label = "Number of Simulations",
                            value = 10, min = 10, max = 500, step = 1) %>%
                 shinyhelper::helper(type = "markdown", content = "n_sim"),
+              # number of sample to be simulated
+              textInput(inputId = "n_samp_grp", label = "Samples per group",
+                        value = "5,10,20", placeholder = "5,10,20") %>%
+                shinyhelper::helper(type = "markdown", content = "n_samp_grp"),
               # Use default fold change values?
               checkboxInput(inputId = "exp_fc", label = "Use Default Fold Change",
                             value = T)%>%
@@ -223,10 +217,6 @@ dashboardPage(
               sliderInput(inputId = "prot_num", label = "Protein Number",
                            value = 1, max = 1000, min = 1) %>%
                 shinyhelper::helper(type = "markdown", content = "prot_num"),
-              # number of sample to be simulated
-              textInput(inputId = "n_samp_grp", label = "Samples per group",
-                        value = "5,10,20", placeholder = "5,10,20") %>%
-                shinyhelper::helper(type = "markdown", content = "n_samp_grp"),
               # should validation set be simulated as well?
               selectInput(inputId = "sim_val", label = "Simulate Validation Set",
                           choices = c(T,F), selected = F) %>%
